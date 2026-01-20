@@ -2,17 +2,23 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>3D Quiz - Score Edition</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>3D Quiz Mobile</title>
     <style>
-        body { margin: 0; background-color: #000; color: white; overflow: hidden; font-family: sans-serif; }
-        #ui { position: absolute; top: 20px; width: 100%; text-align: center; pointer-events: none; }
-        #question { font-size: 26px; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 15px; border: 3px solid #00ff00; display: inline-block; max-width: 80%; }
-        #timer { font-size: 60px; font-weight: bold; color: #ff4444; text-shadow: 2px 2px 4px #000; }
-        #choices { position: absolute; bottom: 50px; width: 100%; display: flex; justify-content: space-around; pointer-events: none; }
-        .choice-label { font-size: 30px; padding: 15px 30px; border-radius: 10px; border: 4px solid white; font-weight: bold; }
+        body { margin: 0; background-color: #000; color: white; overflow: hidden; font-family: sans-serif; touch-action: none; }
+        #ui { position: absolute; top: 10px; width: 100%; text-align: center; pointer-events: none; }
+        #question { font-size: 18px; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 10px; border: 2px solid #00ff00; display: inline-block; max-width: 90%; }
+        #timer { font-size: 40px; font-weight: bold; color: #ff4444; }
+        
+        /* スマホ用コントローラー */
+        #joystick-container { position: absolute; bottom: 40px; left: 40px; width: 120px; height: 120px; background: rgba(255,255,255,0.2); border-radius: 50%; touch-action: none; }
+        #joystick-stick { position: absolute; top: 35px; left: 35px; width: 50px; height: 50px; background: rgba(255,255,255,0.5); border-radius: 50%; }
+
+        #choices { position: absolute; bottom: 180px; width: 100%; display: flex; justify-content: space-around; pointer-events: none; }
+        .choice-label { font-size: 18px; padding: 10px 15px; border-radius: 8px; border: 2px solid white; font-weight: bold; }
         #labelA { background: rgba(255, 68, 68, 0.8); }
         #labelB { background: rgba(68, 68, 255, 0.8); }
-        #msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 30px; display: none; background: rgba(0,0,0,0.9); padding: 30px; text-align: center; border-radius: 20px; width: 60%; z-index: 100; }
+        #msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 20px; display: none; background: rgba(0,0,0,0.9); padding: 20px; text-align: center; border-radius: 15px; width: 80%; z-index: 100; }
     </style>
 </head>
 <body>
@@ -24,24 +30,22 @@
         <div id="labelA" class="choice-label">A: ---</div>
         <div id="labelB" class="choice-label">B: ---</div>
     </div>
+    <div id="joystick-container"><div id="joystick-stick"></div></div>
     <div id="msg"></div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-
     <script>
+        // --- クイズデータ ---
         const quizData = [
-            { q: "クジラは「魚」のなかまである？", choiceA: "YES", choiceB: "NO (哺乳類)", a: "B", expl: "正解はNO！クジラは赤ちゃんをおっぱいで育てる「哺乳類」だよ。" },
-            { q: "カボチャは英語でなんと言う？", choiceA: "パンプキン", choiceB: "メロン", a: "A", expl: "正解はパンプキン！ハロウィンでおなじみだね。" },
-            { q: "1週間はぜんぶで何時間？", choiceA: "168時間", choiceB: "100時間", a: "A", expl: "正解は168時間！ 24h × 7日 = 168だよ。" },
-            { q: "チョウチョウの足の数は、ぜんぶで何本？", choiceA: "4本", choiceB: "6本", a: "B", expl: "正解は6本！虫の足はみんな6本なんだ。" },
-            { q: "太陽系のなかで、いちばん大きい惑星は？", choiceA: "火星", choiceB: "木星", a: "B", expl: "正解は木星！地球が11個ならぶくらい大きいんだよ。" }
+            { q: "クジラは「魚」のなかまである？", choiceA: "YES", choiceB: "NO", a: "B", expl: "正解はNO！哺乳類だよ。" },
+            { q: "カボチャは英語でなんと言う？", choiceA: "パンプキン", choiceB: "メロン", a: "A", expl: "正解はパンプキン！" },
+            { q: "太陽系でいちばん大きい惑星は？", choiceA: "火星", choiceB: "木星", a: "B", expl: "正解は木星！" }
         ];
 
-        let currentLevel = 0;
-        let score = 0; // スコア
-        let timeLeft = 10;
-        let isMoving = true;
+        let currentLevel = 0, score = 0, timeLeft = 10, isMoving = true;
+        let moveX = 0, moveZ = 0; // 移動量
 
+        // --- Three.js 基本設定 ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x111122);
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -73,20 +77,44 @@
         camera.position.set(0, 12, 18);
         camera.lookAt(0, 0, 0);
 
+        // --- ジョイスティックのロジック ---
+        const stick = document.getElementById('joystick-stick');
+        const container = document.getElementById('joystick-container');
+        container.addEventListener('touchstart', handleTouch);
+        container.addEventListener('touchmove', handleTouch);
+        container.addEventListener('touchend', () => {
+            stick.style.transform = `translate(0px, 0px)`;
+            moveX = 0; moveZ = 0;
+        });
+
+        function handleTouch(e) {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = container.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            let dx = touch.clientX - centerX;
+            let dy = touch.clientY - centerY;
+            const dist = Math.min(Math.sqrt(dx*dx + dy*dy), 40);
+            const angle = Math.atan2(dy, dx);
+            const x = Math.cos(angle) * dist;
+            const y = Math.sin(angle) * dist;
+            stick.style.transform = `translate(${x}px, ${y}px)`;
+            moveX = x / 40;
+            moveZ = y / 40;
+        }
+
+        // --- キーボード操作も残す ---
         const keys = {};
         window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
         window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
 
         function setQuestion() {
-            if (currentLevel >= quizData.length) {
-                // すべて終わった時の表示はcheckResult内で処理
-                return;
-            }
+            if (currentLevel >= quizData.length) return;
             const data = quizData[currentLevel];
             document.getElementById('question').innerText = `第${currentLevel + 1}問: ${data.q}`;
             document.getElementById('labelA').innerText = `A: ${data.choiceA}`;
             document.getElementById('labelB').innerText = `B: ${data.choiceB}`;
-            
             timeLeft = 10;
             player.position.set(0, 0.6, 8);
             document.getElementById('msg').style.display = 'none';
@@ -98,6 +126,10 @@
             if (!isMoving) return;
 
             const speed = 0.2;
+            // ジョイスティックでの移動
+            player.position.x += moveX * speed;
+            player.position.z += moveZ * speed;
+            // キーボードでの移動
             if (keys['w'] || keys['arrowup']) player.position.z -= speed;
             if (keys['s'] || keys['arrowdown']) player.position.z += speed;
             if (keys['a'] || keys['arrowleft']) player.position.x -= speed;
@@ -114,32 +146,22 @@
             const correctAns = quizData[currentLevel].a;
             const distA = player.position.distanceTo(areaA.position);
             const distB = player.position.distanceTo(areaB.position);
-            
-            let playerChoice = "";
-            if (distA < 3.5) playerChoice = "A";
-            else if (distB < 3.5) playerChoice = "B";
-
+            let playerChoice = (distA < 3.5) ? "A" : (distB < 3.5) ? "B" : "";
             const msg = document.getElementById('msg');
             msg.style.display = 'block';
-            
             if (playerChoice === correctAns) {
-                msg.innerHTML = `<span style="color:yellow; font-size:40px;">正解！</span><br><br>${quizData[currentLevel].expl}`;
+                msg.innerHTML = `<span style="color:yellow;">正解！</span><br>${quizData[currentLevel].expl}`;
                 score++;
             } else {
-                msg.innerHTML = `<span style="color:red; font-size:40px;">残念...</span><br><br>正解は ${correctAns} でした。<br><br>${quizData[currentLevel].expl}`;
+                msg.innerHTML = `<span style="color:red;">残念...</span><br>正解は ${correctAns}`;
             }
-
             currentLevel++;
-
             if (currentLevel >= quizData.length) {
-                setTimeout(() => {
-                    msg.innerHTML = `<span style="color:#00ff00; font-size:40px;">終了！</span><br><br>あなたのスコアは ${quizData.length}問中 ${score}問正解 でした！<br><br><small>もう一度遊ぶにはブラウザをリロードしてね</small>`;
-                }, 4000);
+                setTimeout(() => { msg.innerHTML = `終了！ ${score}/${quizData.length}正解`; }, 3000);
             } else {
-                setTimeout(setQuestion, 4000);
+                setTimeout(setQuestion, 3000);
             }
         }
-
         setQuestion();
         animate();
     </script>
