@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>3D Quiz - Score Edition</title>
+    <style>
+        body { margin: 0; background-color: #000; color: white; overflow: hidden; font-family: sans-serif; }
+        #ui { position: absolute; top: 20px; width: 100%; text-align: center; pointer-events: none; }
+        #question { font-size: 26px; background: rgba(0,0,0,0.8); padding: 20px; border-radius: 15px; border: 3px solid #00ff00; display: inline-block; max-width: 80%; }
+        #timer { font-size: 60px; font-weight: bold; color: #ff4444; text-shadow: 2px 2px 4px #000; }
+        #choices { position: absolute; bottom: 50px; width: 100%; display: flex; justify-content: space-around; pointer-events: none; }
+        .choice-label { font-size: 30px; padding: 15px 30px; border-radius: 10px; border: 4px solid white; font-weight: bold; }
+        #labelA { background: rgba(255, 68, 68, 0.8); }
+        #labelB { background: rgba(68, 68, 255, 0.8); }
+        #msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 30px; display: none; background: rgba(0,0,0,0.9); padding: 30px; text-align: center; border-radius: 20px; width: 60%; z-index: 100; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div id="question"></div>
+        <div id="timer">10</div>
+    </div>
+    <div id="choices">
+        <div id="labelA" class="choice-label">A: ---</div>
+        <div id="labelB" class="choice-label">B: ---</div>
+    </div>
+    <div id="msg"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        const quizData = [
+            { q: "クジラは「魚」のなかまである？", choiceA: "YES", choiceB: "NO (哺乳類)", a: "B", expl: "正解はNO！クジラは赤ちゃんをおっぱいで育てる「哺乳類」だよ。" },
+            { q: "カボチャは英語でなんと言う？", choiceA: "パンプキン", choiceB: "メロン", a: "A", expl: "正解はパンプキン！ハロウィンでおなじみだね。" },
+            { q: "1週間はぜんぶで何時間？", choiceA: "168時間", choiceB: "100時間", a: "A", expl: "正解は168時間！ 24h × 7日 = 168だよ。" },
+            { q: "チョウチョウの足の数は、ぜんぶで何本？", choiceA: "4本", choiceB: "6本", a: "B", expl: "正解は6本！虫の足はみんな6本なんだ。" },
+            { q: "太陽系のなかで、いちばん大きい惑星は？", choiceA: "火星", choiceB: "木星", a: "B", expl: "正解は木星！地球が11個ならぶくらい大きいんだよ。" }
+        ];
+
+        let currentLevel = 0;
+        let score = 0; // スコア
+        let timeLeft = 10;
+        let isMoving = true;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111122);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const light = new THREE.PointLight(0xffffff, 1.5, 100);
+        light.position.set(0, 10, 10);
+        scene.add(light);
+        scene.add(new THREE.AmbientLight(0x404040));
+
+        const plane = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ color: 0x222222 }));
+        plane.rotation.x = -Math.PI / 2;
+        scene.add(plane);
+
+        const areaA = new THREE.Mesh(new THREE.BoxGeometry(6, 0.2, 6), new THREE.MeshStandardMaterial({ color: 0xff4444 }));
+        areaA.position.set(-8, 0.1, -5);
+        scene.add(areaA);
+
+        const areaB = new THREE.Mesh(new THREE.BoxGeometry(6, 0.2, 6), new THREE.MeshStandardMaterial({ color: 0x4444ff }));
+        areaB.position.set(8, 0.1, -5);
+        scene.add(areaB);
+
+        const player = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), new THREE.MeshStandardMaterial({ color: 0x00ff00 }));
+        player.position.set(0, 0.6, 8);
+        scene.add(player);
+
+        camera.position.set(0, 12, 18);
+        camera.lookAt(0, 0, 0);
+
+        const keys = {};
+        window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
+        window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+
+        function setQuestion() {
+            if (currentLevel >= quizData.length) {
+                // すべて終わった時の表示はcheckResult内で処理
+                return;
+            }
+            const data = quizData[currentLevel];
+            document.getElementById('question').innerText = `第${currentLevel + 1}問: ${data.q}`;
+            document.getElementById('labelA').innerText = `A: ${data.choiceA}`;
+            document.getElementById('labelB').innerText = `B: ${data.choiceB}`;
+            
+            timeLeft = 10;
+            player.position.set(0, 0.6, 8);
+            document.getElementById('msg').style.display = 'none';
+            isMoving = true;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!isMoving) return;
+
+            const speed = 0.2;
+            if (keys['w'] || keys['arrowup']) player.position.z -= speed;
+            if (keys['s'] || keys['arrowdown']) player.position.z += speed;
+            if (keys['a'] || keys['arrowleft']) player.position.x -= speed;
+            if (keys['d'] || keys['arrowright']) player.position.x += speed;
+
+            timeLeft -= 1/60;
+            document.getElementById('timer').innerText = Math.max(0, Math.ceil(timeLeft));
+            if (timeLeft <= 0) checkResult();
+            renderer.render(scene, camera);
+        }
+
+        function checkResult() {
+            isMoving = false;
+            const correctAns = quizData[currentLevel].a;
+            const distA = player.position.distanceTo(areaA.position);
+            const distB = player.position.distanceTo(areaB.position);
+            
+            let playerChoice = "";
+            if (distA < 3.5) playerChoice = "A";
+            else if (distB < 3.5) playerChoice = "B";
+
+            const msg = document.getElementById('msg');
+            msg.style.display = 'block';
+            
+            if (playerChoice === correctAns) {
+                msg.innerHTML = `<span style="color:yellow; font-size:40px;">正解！</span><br><br>${quizData[currentLevel].expl}`;
+                score++;
+            } else {
+                msg.innerHTML = `<span style="color:red; font-size:40px;">残念...</span><br><br>正解は ${correctAns} でした。<br><br>${quizData[currentLevel].expl}`;
+            }
+
+            currentLevel++;
+
+            if (currentLevel >= quizData.length) {
+                setTimeout(() => {
+                    msg.innerHTML = `<span style="color:#00ff00; font-size:40px;">終了！</span><br><br>あなたのスコアは ${quizData.length}問中 ${score}問正解 でした！<br><br><small>もう一度遊ぶにはブラウザをリロードしてね</small>`;
+                }, 4000);
+            } else {
+                setTimeout(setQuestion, 4000);
+            }
+        }
+
+        setQuestion();
+        animate();
+    </script>
+</body>
+</html>
